@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+  <meta charset="UTF-8">
+  <title>चौहान दूध भंडार - दूध बिलिंग सिस्टम</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- pdf.js library for canvas preview -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.min.js"></script>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      padding: 30px;
+      background: linear-gradient(to right, #f9f9f9, #e9f5ec);
+    }
+    .container {
+      max-width: 650px;
+      margin: auto;
+      background: #ffffff;
+      padding: 30px;
+      border-radius: 16px;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+    h2, h3 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 20px;
+    }
+    input, select, button {
+      width: 100%;
+      padding: 12px 14px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 16px;
+      box-sizing: border-box;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #28a745;
+      box-shadow: 0 0 5px #28a74544;
+    }
+    button {
+      background-color: #28a745;
+      color: #fff;
+      font-weight: bold;
+      transition: background-color 0.3s ease;
+      border: none;
+    }
+    button:hover {
+      background-color: #218838;
+    }
+    .output {
+      margin-top: 15px;
+      font-weight: bold;
+      color: green;
+      text-align: center;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: #fafafa;
+    }
+    th, td {
+      border: 1px solid #ddd;
+      padding: 10px;
+      text-align: center;
+    }
+    th {
+      background-color: #f2f2f2;
+      font-weight: bold;
+    }
+    .summary-date {
+      font-size: 18px;
+      color: darkred;
+      text-align: center;
+      margin-bottom: 10px;
+    }
+    #pdfPreviewSection {
+      display: none;
+      margin-top: 30px;
+      text-align: center;
+    }
+    #pdfCanvas {
+      border: 1px solid #aaa;
+      margin-top: 10px;
+      border-radius: 8px;
+      background: #f8f8f8;
+      max-width: 100%;
+      height: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>🥛 चौहान दूध भंडार<br><small>📞 8445271087 | गांव: चौहानपुर, पोस्ट: हरदुआगंज</small></h2>
+
+    <h3>नया ग्राहक जोड़ें</h3>
+    <input type="text" id="newCustomerName" placeholder="ग्राहक का नाम">
+    <input type="text" id="newCustomerMobile" placeholder="मोबाइल नंबर (10 अंक)">
+    <button type="button" onclick="addCustomer()">ग्राहक जोड़ें</button>
+
+    <form id="milkForm">
+      <label>ग्राहक चुनें:</label>
+      <select id="customerSelect" required>
+        <option value="" disabled selected>ग्राहक चुनें</option>
+      </select>
+
+      <label>मोबाइल नंबर:</label>
+      <input type="text" id="mobileNumber" readonly>
+
+      <label>दूध मात्रा (लीटर में):</label>
+      <input type="number" id="milkQty" step="0.1" placeholder="जैसे 2.5">
+
+      <button type="submit">आज का एंट्री जोड़ें</button>
+    </form>
+
+    <button onclick="previewBill()">बिल प्रीव्यू करें</button>
+    <button onclick="sendBill()">बिल भेजें</button>
+
+    <div class="output" id="output"></div>
+
+    <div id="entriesTable" style="display: none;">
+      <h3>दैनिक दूध प्रविष्टियाँ</h3>
+      <div id="summaryDate" class="summary-date"></div>
+      <div id="summaryView"></div>
+    </div>
+
+    <div id="pdfPreviewSection">
+      <h3>बिल प्रीव्यू</h3>
+      <canvas id="pdfCanvas"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const customers = [];
+    const entries = {};
+    const rate = 66;
+    let currentMonth = new Date().getMonth();
+
+    const customerSelect = document.getElementById('customerSelect');
+    const mobileInput = document.getElementById('mobileNumber');
+    const milkQtyInput = document.getElementById('milkQty');
+    const form = document.getElementById('milkForm');
+    const output = document.getElementById('output');
+    const summaryView = document.getElementById('summaryView');
+    const summaryDate = document.getElementById('summaryDate');
+    const entriesTable = document.getElementById('entriesTable');
+    const pdfPreviewSection = document.getElementById('pdfPreviewSection');
+    const pdfCanvas = document.getElementById('pdfCanvas');
+
+    function addCustomer() {
+      const name = document.getElementById('newCustomerName').value.trim();
+      const mobile = document.getElementById('newCustomerMobile').value.trim();
+      if (!name || !/^[0-9]{10}$/.test(mobile)) {
+        alert("मान्य नाम और 10 अंकों का मोबाइल नंबर दर्ज करें।");
+        return;
+      }
+      customers.push({ name, mobile });
+      const opt = document.createElement('option');
+      opt.value = customers.length - 1;
+      opt.text = name;
+      customerSelect.appendChild(opt);
+      alert("ग्राहक सफलतापूर्वक जोड़ा गया!");
+      document.getElementById('newCustomerName').value = '';
+      document.getElementById('newCustomerMobile').value = '';
+    }
+
+    customerSelect.addEventListener('change', function() {
+      const customer = customers[this.value];
+      mobileInput.value = customer.mobile;
+      renderTable(customer.mobile);
+    });
+
+    form.addEventListener('submit', function(e) {
+      e.preventDefault();
+      const now = new Date();
+      if (now.getMonth() !== currentMonth) {
+        currentMonth = now.getMonth();
+        for (let key in entries) entries[key] = [];
+        alert("नया महीना शुरू, सभी एंट्रियाँ रीसेट कर दी गई हैं।");
+      }
+      const index = customerSelect.value;
+      const customer = customers[index];
+      const litres = parseFloat(milkQtyInput.value);
+      const date = new Date().toISOString().split('T')[0];
+      if (isNaN(litres) || litres <= 0) return alert("मान्य मात्रा दर्ज करें।");
+      if (!entries[customer.mobile]) entries[customer.mobile] = [];
+      const total = litres * rate;
+      entries[customer.mobile].push({ date, litres, total });
+      renderTable(customer.mobile);
+      entriesTable.style.display = 'block';
+      output.innerText = `एंट्री सफलतापूर्वक जोड़ी गई: ${litres}L @ ₹${total}`;
+      output.style.color = 'green';
+      form.reset();
+      customerSelect.selectedIndex = 0;
+      mobileInput.value = '';
+    });
+
+    function renderTable(mobile) {
+      const data = entries[mobile];
+      if (!data || data.length === 0) return;
+      const today = new Date().toLocaleDateString('hi-IN');
+      summaryDate.innerText = `दिनांक: ${today}`;
+      let table = '<table><tr><th>दिन</th><th>दूध (L)</th></tr>';
+      let total = 0;
+      data.forEach((e, i) => {
+        table += `<tr><td>${i + 1}</td><td>${e.litres}</td></tr>`;
+        total += e.litres;
+      });
+      table += `<tr><td><b>कुल</b></td><td><b>${total.toFixed(1)}</b></td></tr></table>`;
+      summaryView.innerHTML = table;
+    }
+
+    // PDF Generate function (returns BLOB)
+    function generateBillPDFBlob() {
+      const index = customerSelect.value;
+      if (!index) {
+        alert("कृपया ग्राहक चुनें");
+        return null;
+      }
+      const customer = customers[index];
+      const mobile = customer.mobile;
+      const name = customer.name;
+      const records = entries[mobile];
+      if (!records || records.length === 0) {
+        alert("इस ग्राहक के लिए एंट्री नहीं है।");
+        return null;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+      const monthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+
+      doc.setFontSize(14);
+      doc.text("चौहान दूध भंडार", 10, 10);
+      doc.setFontSize(10);
+      doc.text("गांव: चौहानपुर, पोस्ट: हरदुआगंज", 10, 16);
+      doc.text("मोबाइल: 8445271087", 10, 21);
+      doc.text(`माह: ${monthYear}`, 10, 27);
+      doc.setFontSize(12);
+      doc.text(`ग्राहक: ${name} | मोबाइल: ${mobile}`, 10, 35);
+      doc.line(10, 38, 200, 38);
+
+      let y = 45, totalMilk = 0, totalAmt = 0;
+      records.forEach(entry => {
+        doc.text(`${entry.date} | ${entry.litres} L | ₹${entry.total.toFixed(2)}`, 10, y);
+        totalMilk += entry.litres;
+        totalAmt += entry.total;
+        y += 8;
+      });
+
+      doc.line(10, y, 200, y);
+      y += 10;
+      doc.text(`कुल दूध: ${totalMilk.toFixed(1)} L`, 10, y);
+      y += 8;
+      doc.text(`कुल राशि: ₹${totalAmt.toFixed(2)}`, 10, y);
+
+      return doc.output("blob");
+    }
+
+    // PDF Preview with canvas using pdf.js
+    async function previewBill() {
+      try {
+        const blob = generateBillPDFBlob();
+        if (!blob) return;
+
+        const url = URL.createObjectURL(blob);
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        // Set the workerSrc property
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.2.67/pdf.worker.min.js';
+
+        pdfPreviewSection.style.display = 'block';
+        const canvas = pdfCanvas;
+        const context = canvas.getContext('2d');
+        context.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Load the PDF
+        const loadingTask = pdfjsLib.getDocument(url);
+        loadingTask.promise.then(function(pdf) {
+          // Only first page preview
+          pdf.getPage(1).then(function(page) {
+            const viewport = page.getViewport({ scale: 1.2 });
+            canvas.height = viewport.height;
+            canvas.width = viewport.width;
+
+            const renderContext = {
+              canvasContext: context,
+              viewport: viewport,
+            };
+            page.render(renderContext);
+          });
+        }).catch(function(error) {
+          alert("PDF लोड नहीं हो सका: " + error.message);
+        });
+      } catch (e) {
+        alert("कुछ गड़बड़ हो गई: " + e.message);
+      }
+    }
+
+    async function sendBill() {
+      try {
+        const index = customerSelect.value;
+        if (!index) return alert("कृपया ग्राहक चुनें");
+        const customer = customers[index];
+        const mobile = customer.mobile;
+        const name = customer.name;
+        const records = entries[mobile];
+        if (!records || records.length === 0) return alert("इस ग्राहक के लिए एंट्री नहीं है।");
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF();
+        const monthYear = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
+
+        doc.setFontSize(14);
+        doc.text("चौहान दूध भंडार", 10, 10);
+        doc.setFontSize(10);
+        doc.text("गांव: चौहानपुर, पोस्ट: हरदुआगंज", 10, 16);
+        doc.text("मोबाइल: 8445271087", 10, 21);
+        doc.text(`माह: ${monthYear}`, 10, 27);
+        doc.setFontSize(12);
+        doc.text(`ग्राहक: ${name} | मोबाइल: ${mobile}`, 10, 35);
+        doc.line(10, 38, 200, 38);
+
+        let y = 45, totalMilk = 0, totalAmt = 0;
+        records.forEach(entry => {
+          doc.text(`${entry.date} | ${entry.litres} L | ₹${entry.total.toFixed(2)}`, 10, y);
+          totalMilk += entry.litres;
+          totalAmt += entry.total;
+          y += 8;
+        });
+
+        doc.line(10, y, 200, y);
+        y += 10;
+        doc.text(`कुल दूध: ${totalMilk.toFixed(1)} L`, 10, y);
+        y += 8;
+        doc.text(`कुल राशि: ₹${totalAmt.toFixed(2)}`, 10, y);
+
+        const blob = doc.output("blob");
+        const formData = new FormData();
+        formData.append("pdf", blob, `Bill_${name.replace(/\s+/g, "_")}.pdf`);
+
+        const res = await fetch("https://milk-server.onrender.com/upload", { method: "POST", body: formData });
+        const data = await res.json();
+        if (data.success) {
+          const wa = `https://wa.me/91${mobile}?text=${encodeURIComponent("📄 आपका दूध बिल: " + data.fileUrl)}`;
+          window.open(wa, '_blank');
+        } else {
+          alert("❌ बिल भेजने में समस्या आई।");
+        }
+      } catch (err) {
+        console.error(err);
+        alert("❌ कुछ गड़बड़ हो गई।");
+      }
+    }
+  </script>
+</body>
+</html>
